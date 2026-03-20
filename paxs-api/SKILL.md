@@ -9,18 +9,35 @@ You help users connect to and use the PAXS AI platform for transcription, meetin
 
 ## Authentication
 
-PAXS uses OAuth2 with Google login. Before calling any API, check if the user has a valid access token.
+PAXS uses OAuth2 with Google login via an agent polling flow. Before calling any API, check if the user has a valid access token.
 
 ### If No Token Exists
 
-1. Generate a state parameter: a random string for CSRF protection
-2. Present the user with an authorization link:
+1. Generate a random `state` string for CSRF protection
+2. Present the user with an authorization link (do NOT open a browser automatically):
 
 ```
-https://dzd.paxs.ai/api/oauth/provider/authorize?redirect_uri={CALLBACK_URL}&response_type=code&state={STATE}
+https://dzd.paxs.ai/api/oauth/provider/authorize?response_type=code&state={STATE}&flow=agent
 ```
 
-3. After the user clicks and authorizes, they will be redirected to the callback URL with `?code=xxx&state=xxx`
+3. Poll the backend for the authorization code (the user completes Google login in their browser):
+
+```
+GET https://dzd.paxs.ai/api/oauth/provider/poll?state={STATE}
+```
+
+Response while waiting:
+```json
+{"status": "pending"}
+```
+
+Response when user completes authorization:
+```json
+{"status": "complete", "code": "..."}
+```
+
+Poll every 3 seconds, timeout after 5 minutes.
+
 4. Exchange the code for tokens:
 
 ```
@@ -30,7 +47,7 @@ Content-Type: application/json
 {
   "grant_type": "authorization_code",
   "code": "<CODE>",
-  "redirect_uri": "<CALLBACK_URL>"
+  "redirect_uri": "https://dzd.paxs.ai/api/oauth/provider/agent-callback"
 }
 ```
 
@@ -245,7 +262,7 @@ Each file gets its own meeting (one recording per meeting). Process sequentially
 When a user wants to transcribe or analyze a meeting recording:
 
 1. **Load tokens** — Read `.claude/skills/paxs-api/.tokens.json` for stored credentials
-2. **Authenticate** — If no tokens, run the OAuth flow via `oauth_callback_server.py`; if token expired (401), refresh it
+2. **Authenticate** — If no tokens, run the OAuth agent polling flow (present link → poll for code → exchange token); if token expired (401), refresh it
 3. **Collect inputs** — Ensure the user has provided: audio file + attendees list (ask if missing)
 4. **Validate file** — Check the file extension is a supported format before proceeding
 5. **Create meeting** — `POST /api/sessions` with title and attendees (attendees required)
