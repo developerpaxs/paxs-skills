@@ -20,7 +20,8 @@ PAXS uses OAuth2 with Google login via an agent polling flow. Before calling any
 https://dzd.paxs.ai/api/oauth/provider/authorize?response_type=code&state={STATE}&flow=agent
 ```
 
-3. Poll the backend for the authorization code (the user completes Google login in their browser):
+3. **Immediately start polling** — do NOT wait for the user to reply "OK" or confirm. Begin polling right after presenting the link:
+
 
 ```
 GET https://dzd.paxs.ai/api/oauth/provider/poll?state={STATE}
@@ -192,7 +193,13 @@ Meeting types: `group`, `team`, `department`, `cross_functional`, `organization`
 
 Note: If requesting `meeting note`, the `instruction` field is required.
 
-**Dependency handling**: The backend automatically resolves dependencies between analysis types. For example, passing `["transcription", "meeting note"]` in a single request will automatically complete transcription first, then generate the meeting note. No need to make separate requests or wait between them.
+**Dependency handling**: All analysis types depend on transcription. Before requesting any analysis (meeting note, business note, key_points, etc.), you MUST ensure a completed transcription exists for the recording:
+
+1. Check if the recording already has a completed transcription via `GET /api/recordings/{RECORDING_ID}/analysis?session_id={SESSION_ID}&analysis_type=transcription`
+2. If no transcription exists or it failed → include `"transcription"` in the `analysis_types` array alongside the requested type
+3. The backend will automatically resolve the dependency chain: transcription completes first, then the requested analysis runs
+
+For example, if the user asks for a meeting note but no transcription exists, send `["transcription", "meeting note"]` in a single request.
 
 ### Get Recording Analysis
 
@@ -216,8 +223,9 @@ Analysis is asynchronous. After uploading a recording, poll this endpoint:
 1. Wait 5 seconds before the first poll
 2. Poll every 5 seconds: `GET /api/recordings/{RECORDING_ID}/analysis?session_id={SESSION_ID}`
 3. Check the `status` of each analysis type in the response
-4. Stop when transcription status is `completed` or `failed`
-5. Timeout after 5 minutes (60 polls)
+4. **Progress notifications** — when transcription status changes to `completed` while other analyses (e.g., meeting note) are still `processing`, notify the user that transcription is done and the remaining analyses are in progress
+5. Stop when all requested analysis types are `completed` or `failed`
+6. Timeout after 5 minutes (60 polls)
 
 ### List meeting
 
@@ -292,15 +300,17 @@ Before calling ANY PAXS API endpoint, you MUST:
 
 ### User-Facing Response Rules
 
-- **Filter API responses for the user** — do not dump raw API responses. Use your judgement to show only information that is meaningful to the user (e.g., title, participants, time, status). Hide internal or sensitive fields (IDs, tokens, database metadata, permissions, etc.) — keep them in memory for follow-up operations only.
+- **Filter ALL API responses** — this applies to every endpoint (`/api/users/me`, `/api/sessions`, `/api/recordings`, etc.). Do not dump raw API responses. Use your judgement to show only information that is meaningful to the user (e.g., title, participants, time, status). Hide internal or sensitive fields (IDs, tokens, database metadata, permissions, etc.) — keep them in memory for follow-up operations only.
 - **Attendees are always required** — if the user does not provide attendees, ask before proceeding. Do not create a meeting without them.
 - **Title is optional** — prompt the user for a title. If not provided, auto-generate one (e.g., based on date/time or filename).
+- **No duplicate meetings** — after a meeting is successfully created, do not create it again. If a step fails after meeting creation (e.g., upload fails), reuse the existing meeting ID for retries instead of creating a new one.
 
 ### General
 
-- Present the authorization link clearly and explain what it does
+- Present the authorization link clearly and explain what it does, then immediately start polling — do not wait for user confirmation
 - After uploading a recording, the backend handles the full pipeline automatically (transcription → meeting note)
-- Do not manually call `/api/analysis/request` in the standard flow — only use it for on-demand analysis types like `transcription` or `meeting note`
-- Poll every 5 seconds until completed (max 5 minutes)
+- Do not manually call `/api/analysis/request` in the standard upload flow — only use it for on-demand analysis requests (e.g., user explicitly asks for meeting note or key_points on an existing meeting)
+- When requesting on-demand analysis, always verify transcription exists first (see Dependency handling)
+- Poll every 5 seconds until all analyses complete (max 5 minutes)
 - On transcription failure, retry upload up to 3 times before notifying the user
 - When uploading via curl, always include the correct MIME type for the file
