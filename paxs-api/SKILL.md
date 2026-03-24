@@ -279,12 +279,28 @@ When a user wants to transcribe or analyze a meeting recording:
 
 ## Guidelines
 
-- Always read tokens from `.claude/skills/paxs-api/.tokens.json` before making API calls
-- When the token expires (401), automatically refresh, update `.tokens.json`, and retry
+### Step 0: Token Check (MANDATORY before any API call)
+
+Before calling ANY PAXS API endpoint, you MUST:
+
+1. Read `.claude/skills/paxs-api/.tokens.json`
+2. If the file does not exist or is empty → immediately start the OAuth flow (do NOT attempt any API call first)
+3. If tokens exist → proceed with API calls
+4. If any API call returns 401 → refresh the token, update `.tokens.json`, and retry
+
+**Never attempt an API call without first confirming a token exists.**
+
+### User-Facing Response Rules
+
+- **Filter API responses for the user** — do not dump raw API responses. Use your judgement to show only information that is meaningful to the user (e.g., title, participants, time, status). Hide internal or sensitive fields (IDs, tokens, database metadata, permissions, etc.) — keep them in memory for follow-up operations only.
+- **Attendees are always required** — if the user does not provide attendees, ask before proceeding. Do not create a meeting without them.
+- **Title is optional** — prompt the user for a title. If not provided, auto-generate one (e.g., based on date/time or filename).
+
+### General
+
 - Present the authorization link clearly and explain what it does
-- Always require attendees when creating a meeting — ask the user if not provided
 - After uploading a recording, the backend handles the full pipeline automatically (transcription → meeting note)
-- Do not manually call `/api/analysis/request` in the standard flow — only use it for on-demand analysis types like `key_points` or `sentiment`
+- Do not manually call `/api/analysis/request` in the standard flow — only use it for on-demand analysis types like `transcription` or `meeting note`
 - Poll every 5 seconds until completed (max 5 minutes)
 - On transcription failure, retry upload up to 3 times before notifying the user
 - When uploading via curl, always include the correct MIME type for the file
