@@ -276,7 +276,7 @@ When a user wants to transcribe or analyze a meeting recording:
 5. **Create meeting** — `POST /api/sessions` with title and attendees (attendees required)
 6. **Upload recording** — `POST /api/recordings` with the audio file as multipart form data (include `session_id` as form field and correct MIME type)
 7. **Monitor** — The backend auto-triggers: transcription → meeting note. Poll via `GET /api/recordings/{RECORDING_ID}/analysis?session_id={SESSION_ID}` every 5 seconds.
-8. **Retry on failure** — If transcription fails, retry the upload (max 3 attempts). After 3 failures, notify the user with the error details.
+8. **Retry on failure** — While polling, if any analysis status is `failed` (e.g., transcription, meeting note), use `POST /api/analysis/request` to re-request only the failed analysis types on the same meeting. Do NOT re-create the meeting or re-upload the recording. Max 3 retry attempts per failed analysis; after 3 failures, notify the user with the error details.
 
 ## Error Handling
 
@@ -303,13 +303,13 @@ Before calling ANY PAXS API endpoint, you MUST:
 - **Filter ALL API responses** — this applies to every endpoint (`/api/users/me`, `/api/sessions`, `/api/recordings`, etc.). Do not dump raw API responses. Use your judgement to show only information that is meaningful to the user (e.g., title, participants, time, status). Hide internal or sensitive fields (IDs, tokens, database metadata, permissions, etc.) — keep them in memory for follow-up operations only.
 - **Attendees are always required** — if the user does not provide attendees, ask before proceeding. Do not create a meeting without them.
 - **Title is optional** — prompt the user for a title. If not provided, auto-generate one (e.g., based on date/time or filename).
-- **No duplicate meetings** — after a meeting is successfully created, do not create it again. If a step fails after meeting creation (e.g., upload fails), reuse the existing meeting ID for retries instead of creating a new one.
+- **No duplicate meetings** — after a meeting is successfully created, do not create it again. If a step fails after meeting creation (e.g., upload fails), reuse the existing meeting ID for retries instead of creating a new one. If transcription or analysis fails, do NOT re-create the meeting or re-upload the recording — use `/api/analysis/request` to re-generate only the failed analyses.
 
 ### General
 
 - Present the authorization link clearly and explain what it does, then immediately start polling — do not wait for user confirmation
 - After uploading a recording, the backend handles the full pipeline automatically (transcription → meeting note)
-- Do not manually call `/api/analysis/request` in the standard upload flow — only use it for on-demand analysis requests (e.g., user explicitly asks for meeting note or key_points on an existing meeting)
+- Do not manually call `/api/analysis/request` in the standard upload flow — only use it for: (1) retrying failed analyses detected during polling, or (2) on-demand analysis requests (e.g., user explicitly asks for meeting note or key_points on an existing meeting)
 - When requesting on-demand analysis, always verify transcription exists first (see Dependency handling)
 - Poll every 5 seconds until all analyses complete (max 5 minutes)
 - On transcription failure, retry upload up to 3 times before notifying the user
