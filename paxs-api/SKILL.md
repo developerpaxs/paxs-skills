@@ -254,8 +254,8 @@ If attendees are not provided, ask the user before proceeding.
 3. Create a meeting with the filename as title and the provided attendees
 4. Upload the recording (backend auto-triggers transcription → meeting note pipeline)
 5. Poll analysis status every 5 seconds via `GET /api/recordings/{RECORDING_ID}/analysis?session_id={SESSION_ID}`
-6. If transcription fails, retry upload up to 3 times. After 3 failures, notify the user.
-7. Once completed, return the results to the user
+6. Present each analysis result as soon as it completes — do not wait for all analyses to finish before showing results
+7. If any analysis fails, use `POST /api/analysis/request` to re-request only the failed types (max 3 retries). After 3 failures, notify the user with the error details.
 
 ### Multiple Files
 
@@ -311,6 +311,5 @@ Before calling ANY PAXS API endpoint, you MUST:
 - After uploading a recording, the backend handles the full pipeline automatically (transcription → meeting note)
 - Do not manually call `/api/analysis/request` in the standard upload flow — only use it for: (1) retrying failed analyses detected during polling, or (2) on-demand analysis requests (e.g., user explicitly asks for meeting note or key_points on an existing meeting)
 - When requesting on-demand analysis, always verify transcription exists first (see Dependency handling)
-- Poll every 5 seconds until all analyses complete (max 5 minutes)
-- On transcription failure, retry upload up to 3 times before notifying the user
+- Poll every 5 seconds until all analyses complete (max 5 minutes). Present each analysis result to the user as soon as it completes — do not wait for all to finish
 - When uploading via curl, always include the correct MIME type for the file
