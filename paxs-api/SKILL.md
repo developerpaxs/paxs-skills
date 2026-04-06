@@ -222,10 +222,19 @@ Analysis is asynchronous. After uploading a recording, poll this endpoint:
 
 1. Wait 5 seconds before the first poll
 2. Poll every 5 seconds: `GET /api/recordings/{RECORDING_ID}/analysis?session_id={SESSION_ID}`
-3. Check the `status` of each analysis type in the response
-4. **Progress notifications** — when transcription status changes to `completed` while other analyses (e.g., meeting note) are still `processing`, notify the user that transcription is done and the remaining analyses are in progress
+3. **Only check the `status` field** of each item in the response — ignore `report_content` during polling to avoid flooding context with large payloads
+4. Present each analysis result as soon as its status changes to `completed` (see Displaying Results below)
 5. Stop when all requested analysis types are `completed` or `failed`
 6. Timeout after 5 minutes (60 polls)
+
+### Displaying Results
+
+When an analysis completes, parse `report_content` (JSON string) and extract only the relevant fields:
+
+- **Transcription** — show `content.transcription.summary` and `content.transcription.speakers`
+- **Meeting Note** — show `markdown`
+
+Do NOT dump the full `report_content`. Ignore internal fields like `segments`, `prompt_tokens`, `completion_tokens`, `task_id`, etc.
 
 ### List meeting
 
@@ -311,5 +320,5 @@ Before calling ANY PAXS API endpoint, you MUST:
 - After uploading a recording, the backend handles the full pipeline automatically (transcription → meeting note)
 - Do not manually call `/api/analysis/request` in the standard upload flow — only use it for: (1) retrying failed analyses detected during polling, or (2) on-demand analysis requests (e.g., user explicitly asks for meeting note or key_points on an existing meeting)
 - When requesting on-demand analysis, always verify transcription exists first (see Dependency handling)
-- Poll every 5 seconds until all analyses complete (max 5 minutes). Present each analysis result to the user as soon as it completes — do not wait for all to finish
+- Follow the Polling Strategy and Displaying Results sections for polling behavior and result presentation
 - When uploading via curl, always include the correct MIME type for the file
